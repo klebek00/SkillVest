@@ -12,7 +12,7 @@ skillvest = "E9kqJYGA1fXhVqdE8eLYy2C98FD4Bv44Nud5aiNtjwJA"
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "devnet"
+cluster = "localnet"
 wallet = "~/.config/solana/payer.json"
 
 [scripts]
