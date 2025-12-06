@@ -134,7 +134,8 @@ pub mod isa_contract {
     /// Выплата доли студентом (Student -> Vault)
     pub fn pay_share(ctx: Context<PayShare>) -> Result<()> {
         let isa = &mut ctx.accounts.isa_state;
-        require!(isa.status == IsaStatus::Working as u8, IsaError::InvalidStatus);
+        require!(isa.status == IsaStatus::Working as u8 || isa.status == IsaStatus::Delinquent as u8,
+             IsaError::InvalidStatus);
         require!(isa.last_salary > 0, IsaError::NoSalary);
 
         let mut due = isa.last_salary
@@ -157,6 +158,10 @@ pub mod isa_contract {
         token::transfer(cpi_ctx, due)?;
 
         isa.already_paid = isa.already_paid.checked_add(due).ok_or(IsaError::MathOverflow)?;
+
+        if isa.status == IsaStatus::Delinquent as u8 {
+            isa.status = IsaStatus::Working as u8;
+        }
 
         if isa.already_paid >= isa.max_cap {
             isa.status = IsaStatus::Completed as u8;
@@ -239,8 +244,45 @@ pub mod isa_contract {
 
     pub fn report_dropout(ctx: Context<ReportDropout>) -> Result<()> {
         let isa = &mut ctx.accounts.isa_state;
+
+        // 1. Проверка: Запретить завершение уже завершенных контрактов
+        require!(
+            isa.status != IsaStatus::Completed as u8 && isa.status != IsaStatus::DroppedOut as u8,
+            IsaError::InvalidStatus
+        );
+
+        // 2. Обнуление обязательств (фиксируем потерю для инвесторов)
+        isa.max_cap = 0;
+        isa.percent = 0;
+
+        // 3. Установка нового статуса
         isa.status = IsaStatus::DroppedOut as u8;
-        msg!("ISA dropped out: {}", isa.owner);
+
+        msg!("ISA for {} permanently terminated due to dropout.", isa.owner);
+        Ok(())
+    }
+
+    // --- lib.rs (Новая функция) ---
+
+    pub fn report_delinquency(ctx: Context<ReportDelinquency>) -> Result<()> {
+        let isa = &mut ctx.accounts.isa_state;
+
+        // 1. Проверка статуса
+        // Студент должен быть трудоустроен (Working) или безработным (Unemployed), 
+        // но точно не Completed, DroppedOut или StudyingPaid.
+        require!(
+            isa.status == IsaStatus::Working as u8 || isa.status == IsaStatus::Unemployed as u8,
+            IsaError::InvalidStatusForDelinquency
+        );
+        
+        // 2. Проверка зарплаты
+        // Студент не может быть в просрочке, если у него нет дохода или Оракул не установил доход.
+        require!(isa.last_salary > 0, IsaError::NoSalaryToReportDelinquency);
+
+        // 3. Установка статуса просрочки
+        isa.status = IsaStatus::Delinquent as u8;
+
+        msg!("ISA for {} reported as delinquent.", isa.owner);
         Ok(())
     }
 }
@@ -431,7 +473,33 @@ pub struct DistributePayments<'info> {
 pub struct ReportDropout<'info> {
     #[account(mut, seeds = [b"isa", isa_state.owner.as_ref()], bump = isa_state.bump)]
     pub isa_state: Account<'info, IsaState>,
-    pub reporter: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"config"],
+        bump = config.bump,
+        has_one = university @IsaError::UnauthorizedUniversity
+    )]
+    pub config: Account<'info, ISAConfig>,
+
+    pub university: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct ReportDelinquency<'info> {
+    #[account(mut, seeds = [b"isa", isa_state.owner.as_ref()], bump = isa_state.bump)]
+    pub isa_state: Account<'info, IsaState>,
+    
+    // Аккаунт Config для проверки полномочий Оракула
+    #[account(seeds = [b"config"], bump)]
+    pub config: Account<'info, ISAConfig>,
+    
+    /// CHECK:
+    #[account(
+        signer, 
+        constraint = oracle.key() == config.oracle @IsaError::UnauthorizedOracle
+    )]
+    pub oracle: AccountInfo<'info>, // Используем AccountInfo, как и в UpdateSalary
 }
 
 #[error_code]
@@ -444,6 +512,8 @@ pub enum IsaError {
     UnauthorizedOracle,
     #[msg("Unauthorized admin")]
     UnauthorizedAdmin,
+    #[msg("Unauthorized university")]
+    UnauthorizedUniversity,
     #[msg("Invalid university account")]
     InvalidUniversity,
     #[msg("Math overflow")]
@@ -470,6 +540,10 @@ pub enum IsaError {
     FundingExceedsCourseCost,
     #[msg("Nothing to pay")]
     NothingToPay,
+    #[msg("Invalid status for delinquency report")]
+    InvalidStatusForDelinquency,
+    #[msg("Cannot report delinquency when salary is 0")]
+    NoSalaryToReportDelinquency,
 }
 
 #[repr(u8)]
