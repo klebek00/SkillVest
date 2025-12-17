@@ -54,6 +54,8 @@
         .btn-glow { box-shadow: 0 0 15px var(--glow-color), 0 0 20px var(--glow-color); }
         button:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.1); }
         button:disabled { background-color: #333; color: #777; cursor: not-allowed; box-shadow: none; filter: none; }
+        .investor-switch-btn { background-color: transparent; border: 1px solid var(--border-color); }
+        .investor-switch-btn.active { background-color: var(--accent-color); border-color: var(--accent-color); }
         input { font-family: 'Inter', sans-serif; font-size: 15px; padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; background-color: rgba(0,0,0,0.2); color: var(--text-primary); }
         .action-group { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px;}
         .progress-bar { width: 100%; background-color: rgba(255,255,255,0.1); border-radius: 8px; overflow: hidden; height: 10px; margin-top: 5px;}
@@ -64,15 +66,19 @@
         .timeline-icon { font-size: 20px; line-height: 1.2; }
         .timeline-content strong { display: block; font-weight: 700; color: var(--text-primary);}
         .timeline-content span { font-size: 14px; color: var(--text-secondary); }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { text-align: left; padding: 14px; border-bottom: 1px solid var(--border-color); }
+        th { color: var(--text-secondary); font-size: 14px; text-transform: uppercase;}
+        td { color: var(--text-primary); font-weight: 500;}
     </style>
 </head>
 <body>
     <div class="app-container">
         <h1>Skillvest ISA</h1>
         <nav>
-            <button id="nav-student" class="active">🎓 Студент</button>
-            <button id="nav-investor">💰 Инвестор</button>
-            <button id="nav-admin">⚙️ Администрирование</button>
+            <button id="nav-student" class="active"> Студент</button>
+            <button id="nav-investor"> Инвестор</button>
+            <button id="nav-governance"> Доверенные Роли</button>
         </nav>
 
         <!-- === Вкладка Студента === -->
@@ -115,20 +121,60 @@
                 </div>
                  <div class="card">
                     <h2>История событий</h2>
-                    <div id="student-timeline" class="timeline">
-                        <!-- Таймлайн будет генерироваться здесь -->
-                    </div>
+                    <div id="student-timeline" class="timeline"></div>
                 </div>
             </div>
         </div>
 
         <!-- === Вкладка Инвестора === -->
         <div id="investor-view" class="view">
-            <!-- Содержимое для этой вкладки будет сгенерировано JS -->
+            <div class="card">
+                <h2>Переключение профиля</h2>
+                <p id="investor-id-display" style="color: var(--text-secondary);"></p>
+                <div class="action-group">
+                    <button class="investor-switch-btn active" data-investor="investor1">Инвестор #1</button>
+                    <button class="investor-switch-btn" data-investor="investor2">Инвестор #2</button>
+                </div>
+            </div>
+            <div class="card">
+                <h2>Общий статус ISA</h2>
+                <div class="info-grid">
+                    <div class="info-item"><strong>СТАТУС</strong><span id="investor-status">Ожидание</span></div>
+                    <div class="info-item"><strong>ЦЕЛЬ СБОРА</strong><span id="investor-goal">0 токенов</span></div>
+                </div>
+                <strong>Прогресс сбора средств</strong>
+                <div class="progress-bar" style="margin-top: 5px;"><div id="funding-progress" class="progress-bar-inner"></div></div>
+                <div id="investor-funded" class="progress-label"></div>
+            </div>
+            <div class="card">
+                <h2>Ваш финансовый дашборд</h2>
+                <div class="info-grid">
+                    <div class="info-item"><strong>Вы инвестировали</strong><span id="investor-my-stake">0 токенов</span></div>
+                    <div class="info-item"><strong>Вам возвращено</strong><span id="investor-repaid">0 токенов</span></div>
+                    <div class="info-item"><strong>Потенциальный доход</strong><span id="investor-max-return">0 токенов</span></div>
+                    <div class="info-item"><strong>ROI</strong><span id="investor-roi">0%</span></div>
+                </div>
+                <strong>Прогресс возврата инвестиций</strong>
+                <div class="progress-bar" style="margin-top: 5px;"><div id="repayment-progress" class="progress-bar-inner"></div></div>
+            </div>
+            <div class="card">
+                <h2>Инвестировать в ISA</h2>
+                <div class="action-group">
+                    <input type="number" id="invest-amount" value="10" style="width: 150px;">
+                    <button id="invest-btn">Инвестировать</button>
+                </div>
+            </div>
+            <div class="card">
+                <h2>Все инвесторы этого ISA</h2>
+                <table id="all-investors-table">
+                    <thead><tr><th>Инвестор (ID)</th><th>Сумма вклада</th><th>Доля в пуле</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
         </div>
         
-        <!-- === Вкладка Администрирования === -->
-        <div id="admin-view" class="view">
+        <!-- === Вкладка Доверенных Ролей === -->
+        <div id="governance-view" class="view">
             <div class="card">
                 <h2>Статистика Платформы</h2>
                  <div class="info-grid">
@@ -136,10 +182,11 @@
                     <div class="info-item"><strong>Активных ISA</strong><span id="stats-active-isa">0</span></div>
                     <div class="info-item"><strong>Симуляция времени</strong><span id="stats-current-month">Месяц 0</span></div>
                 </div>
-                 <button id="simulate-month-btn">▶️ Пропустить месяц</button>
+                 <button id="simulate-month-btn">▶ Пропустить месяц</button>
             </div>
             <div class="card">
                 <h2>Управление Ролями</h2>
+                <p>Это адреса кошельков, которые имеют специальные права в системе, зафиксированные в смарт-контракте.</p>
                 <div class="info-grid">
                     <div class="info-item"><strong>Университет</strong><code id="role-university-id"></code></div>
                     <div class="info-item"><strong>Оракул</strong><code id="role-oracle-id"></code></div>
